@@ -1,0 +1,12 @@
+# Build caches / outputs
+.gradle/
+build/
+out/
+target/
+
+# Runtime artifacts
+*.db
+*.bak
+
+# Binary artifacts
+*.jar

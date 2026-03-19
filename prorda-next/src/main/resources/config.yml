@@ -1,0 +1,75 @@
+debug:
+  enabled: false
+
+ai:
+  provider: "openai"
+  base-url: "https://api.openai.com/v1"
+  api-key: ""
+  model: "gpt-5-mini"
+  # Для deepseek:
+  # provider: "deepseek"
+  # base-url: "https://api.deepseek.com"
+  # model: "deepseek-chat" # или "deepseek-reasoner"
+
+vk-account:
+  token: ""
+  api-version: "5.199"
+  max-message-length: 3900
+
+server:
+  ip: "play.example.net"
+  vk-link: "https://vk.com/example"
+
+auto-promo:
+  enabled: true
+  interval-minutes: 20
+  daily-limit: 24
+  min-post-length: 40
+  max-post-length: 650
+  max-targets: 200
+
+auto-pr:
+  auto-enable: true
+  cta: "Залетай на сервер сегодня и зови друзей!"
+  text-style: "живой, игровой, без канцелярита"
+  daily-limit: 6
+  min-post-length: 60
+  max-post-length: 700
+  event-cooldown-minutes: 90
+
+  smm-group:
+    enabled: true
+    owner-id: -123456789
+
+  schedule:
+    morning: "09:00"
+    evening: "19:00"
+    weekly-day: "SUNDAY"
+    event-driven: true
+
+  event-thresholds:
+    pvp-kills: 6
+    deaths: 15
+
+  rubrics-enabled:
+    - "новости"
+    - "анонсы"
+    - "мемы"
+    - "гайды"
+    - "итоги недели"
+    - "живые посты по событиям"
+
+  sources:
+    events: "Сегодня активен PvP-ивент с наградами"
+    changelog: "Улучшена стабильность сервера и оптимизирован спавн"
+    map: "Добавлены новые точки интереса около спавна"
+
+  openai:
+    api-key: ""
+    responses-model: "gpt-5-mini"
+    images-model: "gpt-image-1"
+
+  image-generation:
+    enabled: false
+    attach-to-vk: false
+    image-size: "1024x1024"
