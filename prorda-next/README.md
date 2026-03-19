@@ -22,3 +22,4 @@ JAVA_HOME=/path/to/jdk-21 gradle clean jar
 ## Важно
 - Сейчас поддержан только текстовый `wall.post`.
 - Image generation/upload в VK по умолчанию безопасно отключены.
+- LLM-провайдер переключается только через `config.yml` (`ai.provider`: `openai` или `deepseek`).

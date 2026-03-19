@@ -62,10 +62,26 @@ public class ConfigService {
     public String sourceEvents() { return config.getString("auto-pr.sources.events", ""); }
     public String sourceChangelog() { return config.getString("auto-pr.sources.changelog", ""); }
     public String sourceMap() { return config.getString("auto-pr.sources.map", ""); }
-    public String responsesModel() { return config.getString("auto-pr.openai.responses-model", "gpt-5-mini"); }
+    public String responsesModel() { return aiModel(); }
     public String openAiKey() {
         String c = config.getString("auto-pr.openai.api-key", "").trim();
         return c.isBlank() ? System.getenv().getOrDefault("OPENAI_API_KEY", "") : c;
+    }
+    public String aiProvider() { return config.getString("ai.provider", "openai").trim().toLowerCase(Locale.ROOT); }
+    public String aiBaseUrl() {
+        String configured = config.getString("ai.base-url", "").trim();
+        if (!configured.isBlank()) return configured;
+        return "deepseek".equals(aiProvider()) ? "https://api.deepseek.com" : "https://api.openai.com/v1";
+    }
+    public String aiApiKey() {
+        String configured = config.getString("ai.api-key", "").trim();
+        if (!configured.isBlank()) return configured;
+        return openAiKey();
+    }
+    public String aiModel() {
+        String configured = config.getString("ai.model", "").trim();
+        if (!configured.isBlank()) return configured;
+        return "deepseek".equals(aiProvider()) ? "deepseek-chat" : "gpt-5-mini";
     }
     public boolean imageGenerationEnabled() { return config.getBoolean("auto-pr.image-generation.enabled", false); }
     public boolean attachImagesToVk() { return config.getBoolean("auto-pr.image-generation.attach-to-vk", false); }

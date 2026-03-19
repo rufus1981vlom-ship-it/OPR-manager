@@ -23,7 +23,7 @@ public class AutoPrService {
     private final Storage storage;
     private final RuntimeFactCollector facts;
     private final PromptBuilder promptBuilder;
-    private final OpenAiClient openAi;
+    private final LlmClient llmClient;
     private final VkClient vk;
 
     private BukkitTask heartbeatTask;
@@ -32,9 +32,9 @@ public class AutoPrService {
     private final AtomicBoolean publishInProgress = new AtomicBoolean(false);
 
     public AutoPrService(JavaPlugin plugin, ConfigService config, Storage storage, RuntimeFactCollector facts,
-                         PromptBuilder promptBuilder, OpenAiClient openAi, VkClient vk) {
+                         PromptBuilder promptBuilder, LlmClient llmClient, VkClient vk) {
         this.plugin = plugin; this.config = config; this.storage = storage; this.facts = facts;
-        this.promptBuilder = promptBuilder; this.openAi = openAi; this.vk = vk;
+        this.promptBuilder = promptBuilder; this.llmClient = llmClient; this.vk = vk;
     }
 
     public void setDebug(boolean debug) { this.debug = debug; }
@@ -101,21 +101,29 @@ public class AutoPrService {
         String prompt = promptBuilder.build(rubric, reason, snapshot);
         storage.logPrompt(rubric, prompt);
         storage.setState("debug.last_stage", "openai_request");
-        return openAi.generatePostAsync(prompt)
+        storage.setState("debug.ai.provider", llmClient.provider());
+        storage.setState("debug.ai.base-url", llmClient.baseUrl());
+        storage.setState("debug.ai.model", llmClient.model());
+        return llmClient.generatePostAsync(prompt)
                 .handle((text, err) -> {
                     if (err != null) {
                         Throwable cause = unwrap(err);
-                        if (cause instanceof OpenAiException openAiEx) {
-                            storage.setState("debug.last-openai-http", String.valueOf(openAiEx.httpStatus()));
-                            storage.setState("debug.last-openai-error-code", openAiEx.errorCode());
-                            storage.setState("debug.last-openai-error-message", openAiEx.errorMessage());
-                            storage.logOpenAi(rubric, reason, "http_" + openAiEx.httpStatus(), openAiEx.rawBody(), "");
+                        if (cause instanceof AiProviderException aiEx) {
+                            storage.setState("debug.last-openai-http", String.valueOf(aiEx.httpStatus()));
+                            storage.setState("debug.last-openai-error-code", aiEx.errorCode());
+                            storage.setState("debug.last-openai-error-message", aiEx.errorMessage());
+                            storage.logOpenAi(rubric, reason, "http_" + aiEx.httpStatus(), aiEx.errorBody(), "");
                             return new PublishDebugReport(
-                                    new PublishResult(PublicationStatus.OPENAI_FAILED, openAiEx.getMessage(), ""),
+                                    new PublishResult(PublicationStatus.OPENAI_FAILED, aiEx.getMessage(), ""),
                                     true,
                                     forceTestBypass,
                                     true,
-                                    "http_" + openAiEx.httpStatus(),
+                                    llmClient.provider(),
+                                    llmClient.baseUrl(),
+                                    llmClient.model(),
+                                    String.valueOf(aiEx.httpStatus()),
+                                    aiEx.errorBody(),
+                                    "http_" + aiEx.httpStatus(),
                                     0
                             );
                         }
@@ -125,6 +133,11 @@ public class AutoPrService {
                                 true,
                                 forceTestBypass,
                                 true,
+                                llmClient.provider(),
+                                llmClient.baseUrl(),
+                                llmClient.model(),
+                                "-",
+                                cause.getMessage(),
                                 "failed",
                                 0
                         );
@@ -133,12 +146,12 @@ public class AutoPrService {
                     storage.setState("debug.last-openai-http", "200");
                     storage.setState("debug.last-openai-error-code", "");
                     storage.setState("debug.last-openai-error-message", "");
-                    if (text == null || text.isBlank()) return new PublishDebugReport(new PublishResult(PublicationStatus.EMPTY_OPENAI_RESPONSE, "empty text", ""), true, forceTestBypass, true, "ok_200", 0);
-                    if (text.length() < config.minPrLength()) return new PublishDebugReport(new PublishResult(PublicationStatus.FILTERED_TOO_SHORT, "text too short", text), true, forceTestBypass, true, "ok_200", text.length());
+                    if (text == null || text.isBlank()) return new PublishDebugReport(new PublishResult(PublicationStatus.EMPTY_OPENAI_RESPONSE, "empty text", ""), true, forceTestBypass, true, llmClient.provider(), llmClient.baseUrl(), llmClient.model(), "200", "", "ok_200", 0);
+                    if (text.length() < config.minPrLength()) return new PublishDebugReport(new PublishResult(PublicationStatus.FILTERED_TOO_SHORT, "text too short", text), true, forceTestBypass, true, llmClient.provider(), llmClient.baseUrl(), llmClient.model(), "200", "", "ok_200", text.length());
                     String fp = TextNormalizer.sha256(TextNormalizer.normalizeCore(text));
                     List<String> recent = storage.recentFingerprints(30);
-                    if (recent.contains(fp)) return new PublishDebugReport(new PublishResult(PublicationStatus.DUPLICATE_TEXT, "duplicate fingerprint", text), true, forceTestBypass, true, "ok_200", text.length());
-                    return new PublishDebugReport(new PublishResult(PublicationStatus.PUBLISHED, fp, text), true, forceTestBypass, true, "ok_200", text.length());
+                    if (recent.contains(fp)) return new PublishDebugReport(new PublishResult(PublicationStatus.DUPLICATE_TEXT, "duplicate fingerprint", text), true, forceTestBypass, true, llmClient.provider(), llmClient.baseUrl(), llmClient.model(), "200", "", "ok_200", text.length());
+                    return new PublishDebugReport(new PublishResult(PublicationStatus.PUBLISHED, fp, text), true, forceTestBypass, true, llmClient.provider(), llmClient.baseUrl(), llmClient.model(), "200", "", "ok_200", text.length());
                 })
                 .thenCompose(report -> {
                     PublishResult result = report.result();
@@ -146,8 +159,8 @@ public class AutoPrService {
                     storage.setState("debug.last_stage", "vk_publish");
                     return vk.postToWallAsync(config.smmOwnerId(), trim(result.text(), config.maxPrLength()))
                             .<PublishDebugReport>handle((vkRaw, vkErr) -> vkErr == null
-                                    ? new PublishDebugReport(new PublishResult(PublicationStatus.PUBLISHED, result.details(), result.text()), report.promptBuilt(), report.dataThresholdBypass(), report.openAiRequestSent(), report.openAiResponseStatus(), report.finalTextLength())
-                                    : new PublishDebugReport(new PublishResult(PublicationStatus.VK_PUBLISH_FAILED, vkErr.getMessage(), result.text()), report.promptBuilt(), report.dataThresholdBypass(), report.openAiRequestSent(), report.openAiResponseStatus(), report.finalTextLength()));
+                                    ? new PublishDebugReport(new PublishResult(PublicationStatus.PUBLISHED, result.details(), result.text()), report.promptBuilt(), report.dataThresholdBypass(), report.openAiRequestSent(), report.provider(), report.baseUrl(), report.model(), report.httpStatus(), report.errorBody(), report.openAiResponseStatus(), report.finalTextLength())
+                                    : new PublishDebugReport(new PublishResult(PublicationStatus.VK_PUBLISH_FAILED, vkErr.getMessage(), result.text()), report.promptBuilt(), report.dataThresholdBypass(), report.openAiRequestSent(), report.provider(), report.baseUrl(), report.model(), report.httpStatus(), report.errorBody(), report.openAiResponseStatus(), report.finalTextLength()));
                 })
                 .thenApply(report -> {
                     PublishResult r = report.result();
@@ -168,7 +181,7 @@ public class AutoPrService {
     private CompletableFuture<PublishDebugReport> completed(PublicationStatus status, String details, String text) {
         PublishResult result = new PublishResult(status, details, text);
         storeResult("-", "manual-precheck", result);
-        return CompletableFuture.completedFuture(new PublishDebugReport(result, false, false, false, "not_sent", text == null ? 0 : text.length()));
+        return CompletableFuture.completedFuture(new PublishDebugReport(result, false, false, false, llmClient.provider(), llmClient.baseUrl(), llmClient.model(), "-", "", "not_sent", text == null ? 0 : text.length()));
     }
     private CompletableFuture<PublishDebugReport> completedCleanup(PublicationStatus s, String d, String t) {
         publishInProgress.set(false);

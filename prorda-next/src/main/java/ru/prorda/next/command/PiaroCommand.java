@@ -49,6 +49,11 @@ public class PiaroCommand implements CommandExecutor, TabCompleter {
                 + " prompt built=" + yesNo(r.promptBuilt())
                 + " data threshold bypassed=" + yesNo(r.dataThresholdBypass())
                 + " openai request sent=" + yesNo(r.openAiRequestSent())
+                + " provider=" + r.provider()
+                + " base-url=" + r.baseUrl()
+                + " model=" + r.model()
+                + " http status=" + r.httpStatus()
+                + " error body=" + (r.errorBody() == null ? "" : r.errorBody())
                 + " openai response status=" + r.openAiResponseStatus()
                 + " final text length=" + r.finalTextLength();
     }

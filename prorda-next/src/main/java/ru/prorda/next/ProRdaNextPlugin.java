@@ -6,7 +6,6 @@ import ru.prorda.next.model.PublicationStatus;
 import ru.prorda.next.model.PublishDebugReport;
 import ru.prorda.next.model.PublishResult;
 import ru.prorda.next.service.*;
-import ru.prorda.next.service.OpenAiException;
 import ru.prorda.next.storage.Storage;
 import org.bukkit.Bukkit;
 import org.bukkit.command.PluginCommand;
@@ -50,7 +49,7 @@ public class ProRdaNextPlugin extends JavaPlugin {
         setDebug(config.debugEnabled());
         if (config.autoPrAutoEnable()) startServices();
 
-        if (config.openAiKey().isBlank()) getLogger().warning("[PROrdaNext] OpenAI key missing");
+        if (config.aiApiKey().isBlank()) getLogger().warning("[PROrdaNext] AI key missing");
         if (config.vkToken().isBlank()) getLogger().warning("[PROrdaNext] VK token missing");
         if (config.imageGenerationEnabled() && !config.attachImagesToVk()) {
             getLogger().warning("[PROrdaNext] image generation enabled but VK attachment flow is disabled (safe mode)");
@@ -95,43 +94,55 @@ public class ProRdaNextPlugin extends JavaPlugin {
                 + " debug=" + storage.getState("debug.enabled", "false")
                 + " owner-id=" + config.smmOwnerId()
                 + " vk-token=" + !config.vkToken().isBlank()
-                + " openai-key=" + !config.openAiKey().isBlank()
+                + " ai-key=" + !config.aiApiKey().isBlank()
                 + " posts-today=" + storage.todayPublishedCount()
                 + " last-stage=" + storage.getState("debug.last_stage", "-")
                 + " last-status=" + storage.getState("debug.last_status", "-")
                 + " last-openai-http=" + storage.getState("debug.last-openai-http", "-")
                 + " last-openai-error-code=" + storage.getState("debug.last-openai-error-code", "-")
                 + " last-openai-error-message=" + storage.getState("debug.last-openai-error-message", "-")
+                + " ai-provider=" + storage.getState("debug.ai.provider", config.aiProvider())
+                + " ai-base-url=" + storage.getState("debug.ai.base-url", config.aiBaseUrl())
+                + " ai-model=" + storage.getState("debug.ai.model", config.aiModel())
                 + " last-error=" + storage.getState("debug.last_error", "-");
     }
 
     public CompletableFuture<PublishDebugReport> dryRun(String rubric) {
         String prompt = new PromptBuilder(config).build(rubric, "dryrun", facts.snapshot());
         storage.logPrompt(rubric, prompt);
-        return new OpenAiClient(this, config).generatePostAsync(prompt)
+        OpenAiClient client = new OpenAiClient(this, config);
+        storage.setState("debug.ai.provider", client.provider());
+        storage.setState("debug.ai.base-url", client.baseUrl());
+        storage.setState("debug.ai.model", client.model());
+        return client.generatePostAsync(prompt)
                 .handle((text, err) -> {
                     if (err != null) {
                         Throwable cause = (err.getCause() != null) ? err.getCause() : err;
-                        if (cause instanceof OpenAiException openAiEx) {
-                            storage.setState("debug.last-openai-http", String.valueOf(openAiEx.httpStatus()));
-                            storage.setState("debug.last-openai-error-code", openAiEx.errorCode());
-                            storage.setState("debug.last-openai-error-message", openAiEx.errorMessage());
+                        if (cause instanceof AiProviderException aiEx) {
+                            storage.setState("debug.last-openai-http", String.valueOf(aiEx.httpStatus()));
+                            storage.setState("debug.last-openai-error-code", aiEx.errorCode());
+                            storage.setState("debug.last-openai-error-message", aiEx.errorMessage());
                             return new PublishDebugReport(
-                                    new PublishResult(PublicationStatus.OPENAI_FAILED, openAiEx.getMessage(), ""),
+                                    new PublishResult(PublicationStatus.OPENAI_FAILED, aiEx.getMessage(), ""),
                                     true,
                                     true,
                                     true,
-                                    "http_" + openAiEx.httpStatus(),
+                                    client.provider(),
+                                    client.baseUrl(),
+                                    client.model(),
+                                    String.valueOf(aiEx.httpStatus()),
+                                    aiEx.errorBody(),
+                                    "http_" + aiEx.httpStatus(),
                                     0
                             );
                         }
-                        return new PublishDebugReport(new PublishResult(PublicationStatus.OPENAI_FAILED, cause.getMessage(), ""), true, true, true, "failed", 0);
+                        return new PublishDebugReport(new PublishResult(PublicationStatus.OPENAI_FAILED, cause.getMessage(), ""), true, true, true, client.provider(), client.baseUrl(), client.model(), "-", cause.getMessage(), "failed", 0);
                     }
                     storage.setState("debug.last-openai-http", "200");
                     storage.setState("debug.last-openai-error-code", "");
                     storage.setState("debug.last-openai-error-message", "");
-                    if (text == null || text.isBlank()) return new PublishDebugReport(new PublishResult(PublicationStatus.EMPTY_OPENAI_RESPONSE, "empty", ""), true, true, true, "ok_200", 0);
-                    return new PublishDebugReport(new PublishResult(PublicationStatus.PUBLISHED, "dryrun_ok", text), true, true, true, "ok_200", text.length());
+                    if (text == null || text.isBlank()) return new PublishDebugReport(new PublishResult(PublicationStatus.EMPTY_OPENAI_RESPONSE, "empty", ""), true, true, true, client.provider(), client.baseUrl(), client.model(), "200", "", "ok_200", 0);
+                    return new PublishDebugReport(new PublishResult(PublicationStatus.PUBLISHED, "dryrun_ok", text), true, true, true, client.provider(), client.baseUrl(), client.model(), "200", "", "ok_200", text.length());
                 });
     }
 
