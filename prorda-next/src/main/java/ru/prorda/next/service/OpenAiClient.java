@@ -26,7 +26,7 @@ public class OpenAiClient implements LlmClient {
     public CompletableFuture<String> generatePostAsync(String prompt) {
         String apiKey = config.aiApiKey();
         if (apiKey.isBlank()) {
-            plugin.getLogger().warning("[AI] API key is missing (ai.api-key and OPENAI_API_KEY are empty)");
+            plugin.getLogger().warning("[AI] API key is missing (ai.api-key and provider env key are empty)");
             return CompletableFuture.failedFuture(new IllegalStateException("missing_ai_key"));
         }
 

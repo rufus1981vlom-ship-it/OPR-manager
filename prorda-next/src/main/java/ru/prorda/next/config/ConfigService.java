@@ -76,6 +76,11 @@ public class ConfigService {
     public String aiApiKey() {
         String configured = config.getString("ai.api-key", "").trim();
         if (!configured.isBlank()) return configured;
+        String provider = aiProvider();
+        if ("deepseek".equals(provider)) {
+            String deepseekEnv = System.getenv().getOrDefault("DEEPSEEK_API_KEY", "").trim();
+            if (!deepseekEnv.isBlank()) return deepseekEnv;
+        }
         return openAiKey();
     }
     public String aiModel() {

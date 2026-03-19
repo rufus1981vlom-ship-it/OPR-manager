@@ -6,6 +6,9 @@ ai:
   base-url: "https://api.openai.com/v1"
   api-key: ""
   model: "gpt-5-mini"
+  # Если ai.api-key пустой, ключ берётся из окружения:
+  # - provider=openai   -> OPENAI_API_KEY
+  # - provider=deepseek -> DEEPSEEK_API_KEY (или OPENAI_API_KEY как fallback)
   # Для deepseek:
   # provider: "deepseek"
   # base-url: "https://api.deepseek.com"

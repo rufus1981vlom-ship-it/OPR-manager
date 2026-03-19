@@ -23,3 +23,6 @@ JAVA_HOME=/path/to/jdk-21 gradle clean jar
 - Сейчас поддержан только текстовый `wall.post`.
 - Image generation/upload в VK по умолчанию безопасно отключены.
 - LLM-провайдер переключается только через `config.yml` (`ai.provider`: `openai` или `deepseek`).
+- Для ключей можно использовать либо `ai.api-key`, либо переменные окружения:
+  - `OPENAI_API_KEY` для `openai`;
+  - `DEEPSEEK_API_KEY` для `deepseek` (и `OPENAI_API_KEY` как запасной fallback).
