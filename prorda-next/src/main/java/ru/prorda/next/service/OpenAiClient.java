@@ -43,11 +43,25 @@ public class OpenAiClient {
                 .thenApply(response -> {
                     plugin.getLogger().info("[OpenAI] response_code=" + response.statusCode());
                     plugin.getLogger().info("[OpenAI] raw=" + response.body());
-                    if (response.statusCode() >= 300) throw new IllegalStateException("openai_http_" + response.statusCode());
+                    if (response.statusCode() >= 300) {
+                        throw toOpenAiException(response.statusCode(), response.body());
+                    }
                     String extracted = extractText(response.body());
                     plugin.getLogger().info("[OpenAI] extracted=" + extracted);
                     return extracted;
                 });
+    }
+
+    private OpenAiException toOpenAiException(int httpStatus, String raw) {
+        try {
+            JsonObject root = JsonParser.parseString(raw).getAsJsonObject();
+            JsonObject err = root.has("error") ? root.getAsJsonObject("error") : new JsonObject();
+            String code = err.has("code") ? err.get("code").getAsString() : "unknown_error";
+            String message = err.has("message") ? err.get("message").getAsString() : ("HTTP " + httpStatus);
+            return new OpenAiException(httpStatus, code, message, raw);
+        } catch (Exception parseEx) {
+            return new OpenAiException(httpStatus, "unknown_error", "failed_to_parse_error", raw);
+        }
     }
 
     private String extractText(String raw) {

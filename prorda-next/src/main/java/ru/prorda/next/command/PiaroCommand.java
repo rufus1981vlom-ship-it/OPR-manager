@@ -1,6 +1,7 @@
 package ru.prorda.next.command;
 
 import ru.prorda.next.ProRdaNextPlugin;
+import ru.prorda.next.model.PublishDebugReport;
 import ru.prorda.next.model.PublishResult;
 import org.bukkit.command.*;
 
@@ -27,12 +28,12 @@ public class PiaroCommand implements CommandExecutor, TabCompleter {
             case "testpost" -> {
                 String rubric = args.length > 1 ? args[1] : "новости";
                 sender.sendMessage("§7testpost started: " + rubric);
-                plugin.autoPr().publish(rubric, "testpost").thenAccept(r -> sender.sendMessage(format(r)));
+                plugin.autoPr().publishWithReport(rubric, "testpost", true).thenAccept(r -> sender.sendMessage(formatReport(r)));
             }
             case "dryrun" -> {
                 String rubric = args.length > 1 ? args[1] : "новости";
                 sender.sendMessage("§7dryrun started: " + rubric);
-                plugin.dryRun(rubric).thenAccept(r -> sender.sendMessage(format(r)));
+                plugin.dryRun(rubric).thenAccept(r -> sender.sendMessage(formatReport(r)));
             }
             default -> { return false; }
         }
@@ -42,6 +43,17 @@ public class PiaroCommand implements CommandExecutor, TabCompleter {
     private String format(PublishResult r) {
         return "§bstatus=" + r.status().code() + " details=" + r.details() + " len=" + r.text().length();
     }
+
+    private String formatReport(PublishDebugReport r) {
+        return "§bstatus=" + r.result().status().code()
+                + " prompt built=" + yesNo(r.promptBuilt())
+                + " data threshold bypassed=" + yesNo(r.dataThresholdBypass())
+                + " openai request sent=" + yesNo(r.openAiRequestSent())
+                + " openai response status=" + r.openAiResponseStatus()
+                + " final text length=" + r.finalTextLength();
+    }
+
+    private String yesNo(boolean v) { return v ? "yes" : "no"; }
 
     @Override
     public List<String> onTabComplete(CommandSender sender, Command command, String alias, String[] args) {

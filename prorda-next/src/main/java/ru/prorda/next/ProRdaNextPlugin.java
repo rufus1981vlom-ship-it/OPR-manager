@@ -3,8 +3,10 @@ package ru.prorda.next;
 import ru.prorda.next.command.PiaroCommand;
 import ru.prorda.next.config.ConfigService;
 import ru.prorda.next.model.PublicationStatus;
+import ru.prorda.next.model.PublishDebugReport;
 import ru.prorda.next.model.PublishResult;
 import ru.prorda.next.service.*;
+import ru.prorda.next.service.OpenAiException;
 import ru.prorda.next.storage.Storage;
 import org.bukkit.Bukkit;
 import org.bukkit.command.PluginCommand;
@@ -97,17 +99,39 @@ public class ProRdaNextPlugin extends JavaPlugin {
                 + " posts-today=" + storage.todayPublishedCount()
                 + " last-stage=" + storage.getState("debug.last_stage", "-")
                 + " last-status=" + storage.getState("debug.last_status", "-")
+                + " last-openai-http=" + storage.getState("debug.last-openai-http", "-")
+                + " last-openai-error-code=" + storage.getState("debug.last-openai-error-code", "-")
+                + " last-openai-error-message=" + storage.getState("debug.last-openai-error-message", "-")
                 + " last-error=" + storage.getState("debug.last_error", "-");
     }
 
-    public CompletableFuture<PublishResult> dryRun(String rubric) {
+    public CompletableFuture<PublishDebugReport> dryRun(String rubric) {
         String prompt = new PromptBuilder(config).build(rubric, "dryrun", facts.snapshot());
         storage.logPrompt(rubric, prompt);
         return new OpenAiClient(this, config).generatePostAsync(prompt)
                 .handle((text, err) -> {
-                    if (err != null) return new PublishResult(PublicationStatus.OPENAI_FAILED, err.getMessage(), "");
-                    if (text == null || text.isBlank()) return new PublishResult(PublicationStatus.EMPTY_OPENAI_RESPONSE, "empty", "");
-                    return new PublishResult(PublicationStatus.PUBLISHED, "dryrun_ok", text);
+                    if (err != null) {
+                        Throwable cause = (err.getCause() != null) ? err.getCause() : err;
+                        if (cause instanceof OpenAiException openAiEx) {
+                            storage.setState("debug.last-openai-http", String.valueOf(openAiEx.httpStatus()));
+                            storage.setState("debug.last-openai-error-code", openAiEx.errorCode());
+                            storage.setState("debug.last-openai-error-message", openAiEx.errorMessage());
+                            return new PublishDebugReport(
+                                    new PublishResult(PublicationStatus.OPENAI_FAILED, openAiEx.getMessage(), ""),
+                                    true,
+                                    true,
+                                    true,
+                                    "http_" + openAiEx.httpStatus(),
+                                    0
+                            );
+                        }
+                        return new PublishDebugReport(new PublishResult(PublicationStatus.OPENAI_FAILED, cause.getMessage(), ""), true, true, true, "failed", 0);
+                    }
+                    storage.setState("debug.last-openai-http", "200");
+                    storage.setState("debug.last-openai-error-code", "");
+                    storage.setState("debug.last-openai-error-message", "");
+                    if (text == null || text.isBlank()) return new PublishDebugReport(new PublishResult(PublicationStatus.EMPTY_OPENAI_RESPONSE, "empty", ""), true, true, true, "ok_200", 0);
+                    return new PublishDebugReport(new PublishResult(PublicationStatus.PUBLISHED, "dryrun_ok", text), true, true, true, "ok_200", text.length());
                 });
     }
 

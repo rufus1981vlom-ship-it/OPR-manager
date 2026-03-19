@@ -3,6 +3,7 @@ package ru.prorda.next.service;
 import ru.prorda.next.config.ConfigService;
 import ru.prorda.next.model.GameFactsSnapshot;
 import ru.prorda.next.model.PublicationStatus;
+import ru.prorda.next.model.PublishDebugReport;
 import ru.prorda.next.model.PublishResult;
 import ru.prorda.next.storage.Storage;
 import ru.prorda.next.util.TextNormalizer;
@@ -12,8 +13,8 @@ import org.bukkit.scheduler.BukkitTask;
 
 import java.time.*;
 import java.util.List;
-import java.util.Locale;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 public class AutoPrService {
@@ -82,6 +83,10 @@ public class AutoPrService {
     }
 
     public CompletableFuture<PublishResult> publish(String rubric, String reason) {
+        return publishWithReport(rubric, reason, false).thenApply(PublishDebugReport::result);
+    }
+
+    public CompletableFuture<PublishDebugReport> publishWithReport(String rubric, String reason, boolean forceTestBypass) {
         if (!config.rubrics().contains(rubric)) return completed(PublicationStatus.SKIPPED_RUBRIC_DISABLED, "Rubric disabled", "");
         if (!config.smmGroupEnabled()) return completed(PublicationStatus.SKIPPED_NO_OWNER_ID, "smm-group disabled", "");
         if (config.smmOwnerId() == 0) return completed(PublicationStatus.SKIPPED_NO_OWNER_ID, "owner-id is 0", "");
@@ -89,7 +94,7 @@ public class AutoPrService {
         if (!publishInProgress.compareAndSet(false, true)) return completed(PublicationStatus.SKIPPED_NOT_ENOUGH_DATA, "publish already in progress", "");
 
         storage.setState("debug.last_stage", "prompt_building");
-        GameFactsSnapshot snapshot = facts.snapshot();
+        GameFactsSnapshot snapshot = withFallbackEventIfNeeded(facts.snapshot(), forceTestBypass);
         if (snapshot.recentEvents().isEmpty()) return completedCleanup(PublicationStatus.SKIPPED_NOT_ENOUGH_DATA, "no events collected yet", "");
         if (storage.topicUsedRecently(rubric, 1)) return completedCleanup(PublicationStatus.SKIPPED_TOPIC_RECENTLY_USED, "rubric recently used", "");
 
@@ -99,26 +104,53 @@ public class AutoPrService {
         return openAi.generatePostAsync(prompt)
                 .handle((text, err) -> {
                     if (err != null) {
-                        storage.logOpenAi(rubric, reason, "failed", err.getMessage(), "");
-                        return new PublishResult(PublicationStatus.OPENAI_FAILED, err.getMessage(), "");
+                        Throwable cause = unwrap(err);
+                        if (cause instanceof OpenAiException openAiEx) {
+                            storage.setState("debug.last-openai-http", String.valueOf(openAiEx.httpStatus()));
+                            storage.setState("debug.last-openai-error-code", openAiEx.errorCode());
+                            storage.setState("debug.last-openai-error-message", openAiEx.errorMessage());
+                            storage.logOpenAi(rubric, reason, "http_" + openAiEx.httpStatus(), openAiEx.rawBody(), "");
+                            return new PublishDebugReport(
+                                    new PublishResult(PublicationStatus.OPENAI_FAILED, openAiEx.getMessage(), ""),
+                                    true,
+                                    forceTestBypass,
+                                    true,
+                                    "http_" + openAiEx.httpStatus(),
+                                    0
+                            );
+                        }
+                        storage.logOpenAi(rubric, reason, "failed", cause.getMessage(), "");
+                        return new PublishDebugReport(
+                                new PublishResult(PublicationStatus.OPENAI_FAILED, cause.getMessage(), ""),
+                                true,
+                                forceTestBypass,
+                                true,
+                                "failed",
+                                0
+                        );
                     }
                     storage.logOpenAi(rubric, reason, "ok", "", text);
-                    if (text == null || text.isBlank()) return new PublishResult(PublicationStatus.EMPTY_OPENAI_RESPONSE, "empty text", "");
-                    if (text.length() < config.minPrLength()) return new PublishResult(PublicationStatus.FILTERED_TOO_SHORT, "text too short", text);
+                    storage.setState("debug.last-openai-http", "200");
+                    storage.setState("debug.last-openai-error-code", "");
+                    storage.setState("debug.last-openai-error-message", "");
+                    if (text == null || text.isBlank()) return new PublishDebugReport(new PublishResult(PublicationStatus.EMPTY_OPENAI_RESPONSE, "empty text", ""), true, forceTestBypass, true, "ok_200", 0);
+                    if (text.length() < config.minPrLength()) return new PublishDebugReport(new PublishResult(PublicationStatus.FILTERED_TOO_SHORT, "text too short", text), true, forceTestBypass, true, "ok_200", text.length());
                     String fp = TextNormalizer.sha256(TextNormalizer.normalizeCore(text));
                     List<String> recent = storage.recentFingerprints(30);
-                    if (recent.contains(fp)) return new PublishResult(PublicationStatus.DUPLICATE_TEXT, "duplicate fingerprint", text);
-                    return new PublishResult(PublicationStatus.PUBLISHED, fp, text);
+                    if (recent.contains(fp)) return new PublishDebugReport(new PublishResult(PublicationStatus.DUPLICATE_TEXT, "duplicate fingerprint", text), true, forceTestBypass, true, "ok_200", text.length());
+                    return new PublishDebugReport(new PublishResult(PublicationStatus.PUBLISHED, fp, text), true, forceTestBypass, true, "ok_200", text.length());
                 })
-                .thenCompose(result -> {
-                    if (result.status() != PublicationStatus.PUBLISHED) return CompletableFuture.completedFuture(result);
+                .thenCompose(report -> {
+                    PublishResult result = report.result();
+                    if (result.status() != PublicationStatus.PUBLISHED) return CompletableFuture.completedFuture(report);
                     storage.setState("debug.last_stage", "vk_publish");
                     return vk.postToWallAsync(config.smmOwnerId(), trim(result.text(), config.maxPrLength()))
-                            .<PublishResult>handle((vkRaw, vkErr) -> vkErr == null
-                                    ? new PublishResult(PublicationStatus.PUBLISHED, result.details(), result.text())
-                                    : new PublishResult(PublicationStatus.VK_PUBLISH_FAILED, vkErr.getMessage(), result.text()));
+                            .<PublishDebugReport>handle((vkRaw, vkErr) -> vkErr == null
+                                    ? new PublishDebugReport(new PublishResult(PublicationStatus.PUBLISHED, result.details(), result.text()), report.promptBuilt(), report.dataThresholdBypass(), report.openAiRequestSent(), report.openAiResponseStatus(), report.finalTextLength())
+                                    : new PublishDebugReport(new PublishResult(PublicationStatus.VK_PUBLISH_FAILED, vkErr.getMessage(), result.text()), report.promptBuilt(), report.dataThresholdBypass(), report.openAiRequestSent(), report.openAiResponseStatus(), report.finalTextLength()));
                 })
-                .thenApply(r -> {
+                .thenApply(report -> {
+                    PublishResult r = report.result();
                     storeResult(rubric, reason, r);
                     if (r.isPublished()) {
                         storage.logTopic(rubric);
@@ -127,19 +159,40 @@ public class AutoPrService {
                         if (reason.equals("weekly")) storage.setState("auto-pr.last_weekly", LocalDate.now().toString());
                     }
                     publishInProgress.set(false);
-                    return r;
+                    return report;
                 });
     }
 
     private String trim(String text, int max) { return text.length() > max ? text.substring(0, max) : text; }
 
-    private CompletableFuture<PublishResult> completed(PublicationStatus status, String details, String text) {
-        storeResult("-", "manual-precheck", new PublishResult(status, details, text));
-        return CompletableFuture.completedFuture(new PublishResult(status, details, text));
+    private CompletableFuture<PublishDebugReport> completed(PublicationStatus status, String details, String text) {
+        PublishResult result = new PublishResult(status, details, text);
+        storeResult("-", "manual-precheck", result);
+        return CompletableFuture.completedFuture(new PublishDebugReport(result, false, false, false, "not_sent", text == null ? 0 : text.length()));
     }
-    private CompletableFuture<PublishResult> completedCleanup(PublicationStatus s, String d, String t) {
+    private CompletableFuture<PublishDebugReport> completedCleanup(PublicationStatus s, String d, String t) {
         publishInProgress.set(false);
-        return completed(s,d,t);
+        return completed(s, d, t);
+    }
+
+    private GameFactsSnapshot withFallbackEventIfNeeded(GameFactsSnapshot snapshot, boolean forceBypass) {
+        if (!snapshot.recentEvents().isEmpty()) return snapshot;
+        if (!forceBypass) return snapshot;
+        return new GameFactsSnapshot(
+                snapshot.online(),
+                snapshot.peakSinceStart(),
+                snapshot.peakToday(),
+                snapshot.joins(),
+                snapshot.quits(),
+                snapshot.deaths(),
+                snapshot.pvpKills(),
+                List.of("События: пока без заметных игровых событий")
+        );
+    }
+
+    private Throwable unwrap(Throwable err) {
+        if (err instanceof CompletionException ce && ce.getCause() != null) return ce.getCause();
+        return err;
     }
 
     private void storeResult(String rubric, String reason, PublishResult r) {
