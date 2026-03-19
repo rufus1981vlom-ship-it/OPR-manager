@@ -2,6 +2,15 @@
 
 Новый автономный Paper 1.20.4 плагин для PR/SMM автопостинга в VK.
 
+## Сборка
+```bash
+cd prorda-next
+JAVA_HOME=/path/to/jdk-21 gradle clean jar
+```
+
+> Исходники собираются с Java toolchain 17 (runtime совместим с Java 17+),
+> команда выше запускает Gradle под JDK 21, что обычно стабильнее для окружений с новым Gradle.
+
 ## Что реализовано
 - Runtime-сбор фактов (online/joins/quits/deaths/pvp/events).
 - Auto-PR (утро/вечер/неделя/event-driven).
