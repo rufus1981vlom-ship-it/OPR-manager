@@ -1,0 +1,17 @@
+name: PROrdaNext
+version: 1.0.0
+main: ru.prorda.next.ProRdaNextPlugin
+api-version: '1.20'
+author: PROrda
+libraries:
+  - org.xerial:sqlite-jdbc:3.49.1.0
+  - com.google.code.gson:gson:2.13.1
+commands:
+  piaro:
+    description: PROrdaNext management
+    usage: /piaro <start|stop|reload|status|debug|testpost|dryrun>
+    permission: prorda.admin
+permissions:
+  prorda.admin:
+    description: Access to PROrdaNext admin commands
+    default: op

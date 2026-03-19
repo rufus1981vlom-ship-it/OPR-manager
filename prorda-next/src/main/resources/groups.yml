@@ -1,0 +1,7 @@
+groups:
+  target1:
+    id: 123456789
+    enabled: true
+  target2:
+    id: 987654321
+    enabled: false

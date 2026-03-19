@@ -1,0 +1,33 @@
+plugins {
+    id 'java'
+}
+
+group = 'ru.prorda'
+version = '1.0.0'
+
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(17)
+    }
+}
+
+repositories {
+    mavenCentral()
+    maven { url = 'https://repo.papermc.io/repository/maven-public/' }
+}
+
+dependencies {
+    compileOnly 'io.papermc.paper:paper-api:1.20.4-R0.1-SNAPSHOT'
+    implementation 'org.xerial:sqlite-jdbc:3.49.1.0'
+    implementation 'com.google.code.gson:gson:2.13.1'
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.encoding = 'UTF-8'
+    options.release = 17
+}
+
+jar {
+    archiveBaseName = 'prorda-next'
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+}
