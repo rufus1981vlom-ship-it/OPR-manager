@@ -157,7 +157,8 @@ public class AutoPrService {
                     PublishResult result = report.result();
                     if (result.status() != PublicationStatus.PUBLISHED) return CompletableFuture.completedFuture(report);
                     storage.setState("debug.last_stage", "vk_publish");
-                    return vk.postToWallAsync(config.smmOwnerId(), trim(result.text(), config.maxPrLength()))
+                    CompletableFuture<String> finalTextFuture = prepareFinalTextAsync(result.text());
+                    return finalTextFuture.thenCompose(finalText -> vk.postToWallAsync(config.smmOwnerId(), trim(finalText, config.maxPrLength())))
                             .<PublishDebugReport>handle((vkRaw, vkErr) -> vkErr == null
                                     ? new PublishDebugReport(new PublishResult(PublicationStatus.PUBLISHED, result.details(), result.text()), report.promptBuilt(), report.dataThresholdBypass(), report.openAiRequestSent(), report.provider(), report.baseUrl(), report.model(), report.httpStatus(), report.errorBody(), report.openAiResponseStatus(), report.finalTextLength())
                                     : new PublishDebugReport(new PublishResult(PublicationStatus.VK_PUBLISH_FAILED, vkErr.getMessage(), result.text()), report.promptBuilt(), report.dataThresholdBypass(), report.openAiRequestSent(), report.provider(), report.baseUrl(), report.model(), report.httpStatus(), report.errorBody(), report.openAiResponseStatus(), report.finalTextLength()));
@@ -177,6 +178,20 @@ public class AutoPrService {
     }
 
     private String trim(String text, int max) { return text.length() > max ? text.substring(0, max) : text; }
+
+    private CompletableFuture<String> prepareFinalTextAsync(String text) {
+        if (!config.imageGenerationEnabled() || !config.attachImagesToVk()) return CompletableFuture.completedFuture(text);
+        storage.setState("debug.last_stage", "image_generation");
+        return llmClient.generateImageUrlAsync("Сгенерируй иллюстрацию к посту: " + text)
+                .handle((imageUrl, err) -> {
+                    if (err != null || imageUrl == null || imageUrl.isBlank()) {
+                        Throwable cause = unwrap(err == null ? new RuntimeException("empty_image_url") : err);
+                        plugin.getLogger().warning("[AI:image] failed: " + cause.getMessage());
+                        return text;
+                    }
+                    return text + "\n\n🖼 " + imageUrl;
+                });
+    }
 
     private CompletableFuture<PublishDebugReport> completed(PublicationStatus status, String details, String text) {
         PublishResult result = new PublishResult(status, details, text);

@@ -81,6 +81,12 @@ public class ConfigService {
             String deepseekEnv = System.getenv().getOrDefault("DEEPSEEK_API_KEY", "").trim();
             if (!deepseekEnv.isBlank()) return deepseekEnv;
         }
+        if ("copilot".equals(provider)) {
+            String githubToken = System.getenv().getOrDefault("GITHUB_TOKEN", "").trim();
+            if (!githubToken.isBlank()) return githubToken;
+            String copilotKey = System.getenv().getOrDefault("COPILOT_API_KEY", "").trim();
+            if (!copilotKey.isBlank()) return copilotKey;
+        }
         return openAiKey();
     }
     public String aiModel() {
@@ -90,6 +96,8 @@ public class ConfigService {
     }
     public boolean imageGenerationEnabled() { return config.getBoolean("auto-pr.image-generation.enabled", false); }
     public boolean attachImagesToVk() { return config.getBoolean("auto-pr.image-generation.attach-to-vk", false); }
+    public String imageModel() { return config.getString("auto-pr.openai.images-model", "gpt-image-1").trim(); }
+    public String imageSize() { return config.getString("auto-pr.image-generation.image-size", "1024x1024").trim(); }
 
     public LocalTime parseTime(String text, LocalTime fallback) {
         try { return LocalTime.parse(text); } catch (Exception ignored) { return fallback; }

@@ -9,10 +9,15 @@ ai:
   # Если ai.api-key пустой, ключ берётся из окружения:
   # - provider=openai   -> OPENAI_API_KEY
   # - provider=deepseek -> DEEPSEEK_API_KEY (или OPENAI_API_KEY как fallback)
+  # - provider=copilot  -> GITHUB_TOKEN (или COPILOT_API_KEY, или OPENAI_API_KEY как fallback)
   # Для deepseek:
   # provider: "deepseek"
   # base-url: "https://api.deepseek.com"
   # model: "deepseek-chat" # или "deepseek-reasoner"
+  # Для copilot (GitHub Models API):
+  # provider: "copilot"
+  # base-url: "https://models.github.ai/inference"
+  # model: "openai/gpt-4.1"
 
 vk-account:
   token: ""
