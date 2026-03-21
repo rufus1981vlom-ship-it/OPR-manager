@@ -24,16 +24,57 @@ public class OpenAiClient implements LlmClient {
 
     @Override
     public CompletableFuture<String> generatePostAsync(String prompt) {
+        return requestTextAsync(prompt);
+    }
+
+    @Override
+    public CompletableFuture<String> generateImageUrlAsync(String prompt) {
         String apiKey = config.aiApiKey();
         if (apiKey.isBlank()) {
-            plugin.getLogger().warning("[AI] API key is missing (ai.api-key and OPENAI_API_KEY are empty)");
+            plugin.getLogger().warning("[AI] API key is missing (ai.api-key and provider env key are empty)");
+            return CompletableFuture.failedFuture(new IllegalStateException("missing_ai_key"));
+        }
+        if ("deepseek".equals(provider())) {
+            return CompletableFuture.failedFuture(new IllegalStateException("deepseek_image_generation_not_supported"));
+        }
+
+        JsonObject payload = new JsonObject();
+        payload.addProperty("model", config.imageModel());
+        payload.addProperty("prompt", prompt);
+        payload.addProperty("size", config.imageSize());
+
+        String url = normalizeBaseUrl(baseUrl()) + "/images/generations";
+        HttpRequest request = HttpRequest.newBuilder(URI.create(url))
+                .header("Authorization", "Bearer " + apiKey)
+                .header("Content-Type", "application/json")
+                .timeout(Duration.ofSeconds(45))
+                .POST(HttpRequest.BodyPublishers.ofString(gson.toJson(payload)))
+                .build();
+
+        return httpClient.sendAsync(request, HttpResponse.BodyHandlers.ofString())
+                .thenApply(response -> {
+                    plugin.getLogger().info("[AI:image] provider=" + provider() + " code=" + response.statusCode());
+                    plugin.getLogger().info("[AI:image] raw=" + response.body());
+                    if (response.statusCode() >= 300) {
+                        throw toProviderException(provider(), response.statusCode(), response.body());
+                    }
+                    String imageUrl = extractImageUrl(response.body());
+                    plugin.getLogger().info("[AI:image] extracted-url=" + imageUrl);
+                    return imageUrl;
+                });
+    }
+
+    private CompletableFuture<String> requestTextAsync(String prompt) {
+        String apiKey = config.aiApiKey();
+        if (apiKey.isBlank()) {
+            plugin.getLogger().warning("[AI] API key is missing (ai.api-key and provider env key are empty)");
             return CompletableFuture.failedFuture(new IllegalStateException("missing_ai_key"));
         }
 
         String provider = provider();
         JsonObject payload = new JsonObject();
         String endpoint;
-        if ("deepseek".equals(provider)) {
+        if ("deepseek".equals(provider) || "copilot".equals(provider)) {
             endpoint = "/chat/completions";
             payload.addProperty("model", model());
             JsonArray messages = new JsonArray();
@@ -79,7 +120,12 @@ public class OpenAiClient implements LlmClient {
     public String model() { return config.aiModel(); }
 
     private String normalizeBaseUrl(String base) {
-        String b = (base == null || base.isBlank()) ? ("deepseek".equals(provider()) ? "https://api.deepseek.com" : "https://api.openai.com/v1") : base;
+        String defaultBase = switch (provider()) {
+            case "deepseek" -> "https://api.deepseek.com";
+            case "copilot" -> "https://models.github.ai/inference";
+            default -> "https://api.openai.com/v1";
+        };
+        String b = (base == null || base.isBlank()) ? defaultBase : base;
         if (b.endsWith("/")) b = b.substring(0, b.length() - 1);
         if ("openai".equals(provider()) && !b.endsWith("/v1")) b = b + "/v1";
         return b;
@@ -99,7 +145,7 @@ public class OpenAiClient implements LlmClient {
 
     private String extractText(String provider, String raw) {
         JsonObject root = JsonParser.parseString(raw).getAsJsonObject();
-        if ("deepseek".equals(provider) && root.has("choices")) {
+        if (("deepseek".equals(provider) || "copilot".equals(provider)) && root.has("choices")) {
             JsonArray choices = root.getAsJsonArray("choices");
             if (!choices.isEmpty()) {
                 JsonObject message = choices.get(0).getAsJsonObject().getAsJsonObject("message");
@@ -119,6 +165,16 @@ public class OpenAiClient implements LlmClient {
                 }
             }
         }
+        return "";
+    }
+
+    private String extractImageUrl(String raw) {
+        JsonObject root = JsonParser.parseString(raw).getAsJsonObject();
+        if (!root.has("data")) return "";
+        JsonArray data = root.getAsJsonArray("data");
+        if (data.isEmpty()) return "";
+        JsonObject first = data.get(0).getAsJsonObject();
+        if (first.has("url")) return first.get("url").getAsString();
         return "";
     }
 }

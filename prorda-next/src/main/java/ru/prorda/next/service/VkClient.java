@@ -24,12 +24,20 @@ public class VkClient {
         this.config = config;
     }
 
-    public CompletableFuture<String> postToWallAsync(long ownerId, String text) {
+    public CompletableFuture<String> postToWallAsGroup(long ownerId, String text) {
+        return postToWall(ownerId, text, true);
+    }
+
+    public CompletableFuture<String> postToWallAsUser(long ownerId, String text) {
+        return postToWall(ownerId, text, false);
+    }
+
+    private CompletableFuture<String> postToWall(long ownerId, String text, boolean fromGroup) {
         String token = config.vkToken();
         if (token.isBlank()) return CompletableFuture.failedFuture(new IllegalStateException("missing_vk_token"));
         String body = "owner_id=" + ownerId +
                 "&message=" + URLEncoder.encode(text, StandardCharsets.UTF_8) +
-                "&from_group=1" +
+                "&from_group=" + (fromGroup ? "1" : "0") +
                 "&access_token=" + URLEncoder.encode(token, StandardCharsets.UTF_8) +
                 "&v=" + URLEncoder.encode(config.vkApiVersion(), StandardCharsets.UTF_8);
         HttpRequest request = HttpRequest.newBuilder(URI.create("https://api.vk.com/method/wall.post"))
@@ -38,7 +46,7 @@ public class VkClient {
                 .POST(HttpRequest.BodyPublishers.ofString(body))
                 .build();
 
-        plugin.getLogger().info("[VK] wall.post ownerId=" + ownerId + ", textLength=" + text.length());
+        plugin.getLogger().info("[VK] wall.post ownerId=" + ownerId + ", from_group=" + (fromGroup ? "1" : "0") + ", textLength=" + text.length());
         return http.sendAsync(request, HttpResponse.BodyHandlers.ofString())
                 .thenApply(r -> {
                     plugin.getLogger().info("[VK] response=" + r.body());

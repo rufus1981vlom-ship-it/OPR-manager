@@ -2,74 +2,120 @@ debug:
   enabled: false
 
 ai:
-  provider: "openai"
+  provider: "github-models" # github-models | openai | deepseek
+  github-models:
+    enabled: true
+    endpoint: "https://models.github.ai/inference/chat/completions"
+    token: ""
+    model: "openai/gpt-4.1"
+    api-version: "2022-11-28"
+    timeout-ms: 60000
+    retries: 2
+
+  # legacy fallback block for openai/deepseek mode
   base-url: "https://api.openai.com/v1"
   api-key: ""
   model: "gpt-5-mini"
-  # Для deepseek:
-  # provider: "deepseek"
-  # base-url: "https://api.deepseek.com"
-  # model: "deepseek-chat" # или "deepseek-reasoner"
 
 vk-account:
   token: ""
   api-version: "5.199"
-  max-message-length: 3900
 
 server:
   ip: "play.example.net"
   vk-link: "https://vk.com/example"
 
-auto-promo:
+server-profile:
+  name: "PROrda"
+  ip: "play.example.net"
+  vk-link: "https://vk.com/example"
+  version: "1.20.4"
+  genre: "factions"
+  subgenre: "pvp-survival"
+  features:
+    - "клановые войны"
+    - "ивенты"
+    - "активная администрация"
+  staff-recruitment:
+    roles:
+      - "администратор"
+      - "хэлпер"
+
+smm:
   enabled: true
-  interval-minutes: 20
-  daily-limit: 24
-  min-post-length: 40
-  max-post-length: 650
-  max-targets: 200
+  main-group-id: 123456789
+  interval-hours: 8
+  rubrics:
+    - "interesting"
+    - "facts"
+    - "minecraft-facts"
+    - "anecdotes"
+    - "jokes-light"
+    - "meme-light"
+    - "server-life"
+    - "nostalgia"
+    - "survival-story"
+    - "atmosphere"
+    - "question-post"
+    - "polls"
+    - "today-on-server"
+    - "evening-online"
+    - "mini-story"
+    - "myth-vs-fact"
+    - "did-you-know"
+    - "community-post"
+    - "recruitment-soft"
 
-auto-pr:
-  auto-enable: true
-  cta: "Залетай на сервер сегодня и зови друзей!"
-  text-style: "живой, игровой, без канцелярита"
-  daily-limit: 6
-  min-post-length: 60
-  max-post-length: 700
-  event-cooldown-minutes: 90
+pr:
+  enabled: true
+  cycle-minutes: 60
+  dispatch-window-minutes: 30
+  jitter-seconds: 20
+  rubrics:
+    - "advertising-direct"
+    - "join-call"
+    - "clan-war"
+    - "factions-promo"
+    - "pvp-promo"
+    - "anarchy-promo"
+    - "old-factions-vibe"
+    - "today-join"
+    - "evening-join"
+    - "recruit-staff"
+    - "admin-search"
+    - "helper-search"
+    - "challenge-call"
+    - "comeback-call"
+    - "why-us"
+    - "online-now"
 
-  smm-group:
-    enabled: true
-    owner-id: -123456789
+validation:
+  min-length: 80
+  max-length: 900
+  retries: 2
 
-  schedule:
-    morning: "09:00"
-    evening: "19:00"
-    weekly-day: "SUNDAY"
-    event-driven: true
+polls:
+  enabled: true
 
-  event-thresholds:
-    pvp-kills: 6
-    deaths: 15
+anti-repeat:
+  recent-limit: 30
 
-  rubrics-enabled:
-    - "новости"
-    - "анонсы"
-    - "мемы"
-    - "гайды"
-    - "итоги недели"
-    - "живые посты по событиям"
-
-  sources:
-    events: "Сегодня активен PvP-ивент с наградами"
-    changelog: "Улучшена стабильность сервера и оптимизирован спавн"
-    map: "Добавлены новые точки интереса около спавна"
-
-  openai:
-    api-key: ""
-    responses-model: "gpt-5-mini"
-    images-model: "gpt-image-1"
-
-  image-generation:
-    enabled: false
-    attach-to-vk: false
-    image-size: "1024x1024"
+prompts:
+  smm:
+    openings:
+      - "Сегодня на сервере снова движ"
+      - "Ламповые новости с нашего сервера"
+    cta:
+      - "Залетай вечером и позови друзей."
+      - "А ты бы зашёл сегодня на пару каток?"
+    tones: ["живой", "дружелюбный", "ироничный"]
+    styles: ["короткие абзацы", "естественный разговорный язык"]
+  pr:
+    openings:
+      - "Ищешь сервер для кланвара?"
+      - "Любишь PvP и активный онлайн?"
+    cta:
+      - "Заходи прямо сейчас: {ip}"
+      - "Собирай клан и залетай на {ip}"
+    tones: ["прямой", "энергичный", "боевой"]
+    styles: ["короткий рекламный формат", "вовлекающий заход с выгодами"]

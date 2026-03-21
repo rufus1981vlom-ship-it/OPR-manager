@@ -79,6 +79,17 @@ public class Storage {
         execute("CREATE TABLE IF NOT EXISTS publication_status (id INTEGER PRIMARY KEY AUTOINCREMENT, rubric TEXT, status TEXT, details TEXT, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)");
         execute("CREATE TABLE IF NOT EXISTS topic_history (id INTEGER PRIMARY KEY AUTOINCREMENT, topic TEXT, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)");
         execute("CREATE TABLE IF NOT EXISTS kv_state (key TEXT PRIMARY KEY, value TEXT)");
+        execute("""
+                CREATE TABLE IF NOT EXISTS smm_pr_history (
+                  id INTEGER PRIMARY KEY AUTOINCREMENT,
+                  mode TEXT,
+                  target_id INTEGER,
+                  rubric TEXT,
+                  text_hash TEXT,
+                  status TEXT,
+                  details TEXT,
+                  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )""");
     }
 
     private void execute(String sql) {
@@ -151,4 +162,54 @@ public class Storage {
     }
 
     public synchronized void logTopic(String topic) { ins("INSERT INTO topic_history(topic) VALUES(?)", topic); }
+
+    public synchronized void logSmmPrHistory(String mode, long targetId, String rubric, String textHash, String status, String details) {
+        ins("INSERT INTO smm_pr_history(mode,target_id,rubric,text_hash,status,details) VALUES(?,?,?,?,?,?)",
+                mode, targetId, rubric, textHash, status, details);
+    }
+
+    public synchronized List<String> recentHashes(String mode, int limit) {
+        List<String> out = new ArrayList<>();
+        try (PreparedStatement ps = connection.prepareStatement("SELECT text_hash FROM smm_pr_history WHERE mode=? ORDER BY id DESC LIMIT ?")) {
+            ps.setString(1, mode);
+            ps.setInt(2, limit);
+            try (ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) out.add(rs.getString(1));
+            }
+        } catch (SQLException ignored) {}
+        return out;
+    }
+
+    public synchronized List<String> recentHistory(String mode, String rubric, int limit) {
+        List<String> out = new ArrayList<>();
+        try (PreparedStatement ps = connection.prepareStatement("SELECT details FROM smm_pr_history WHERE mode=? AND rubric=? ORDER BY id DESC LIMIT ?")) {
+            ps.setString(1, mode);
+            ps.setString(2, rubric);
+            ps.setInt(3, limit);
+            try (ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) out.add(rs.getString(1));
+            }
+        } catch (SQLException ignored) {}
+        return out;
+    }
+
+    public synchronized String lastHistorySummary() {
+        try (PreparedStatement ps = connection.prepareStatement("SELECT mode, target_id, status, created_at FROM smm_pr_history ORDER BY id DESC LIMIT 1")) {
+            try (ResultSet rs = ps.executeQuery()) {
+                if (!rs.next()) return "-";
+                return rs.getString(1) + ":" + rs.getLong(2) + ":" + rs.getString(3) + ":" + rs.getString(4);
+            }
+        } catch (SQLException ignored) {
+            return "-";
+        }
+    }
+
+    public synchronized int todayModeCount(String mode) {
+        try (PreparedStatement ps = connection.prepareStatement("SELECT COUNT(*) FROM smm_pr_history WHERE mode=? AND status='success' AND date(created_at)=date('now','localtime')")) {
+            ps.setString(1, mode);
+            try (ResultSet rs = ps.executeQuery()) { return rs.next() ? rs.getInt(1) : 0; }
+        } catch (SQLException e) {
+            return 0;
+        }
+    }
 }
