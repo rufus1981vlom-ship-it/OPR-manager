@@ -68,7 +68,7 @@ public class PrManager {
 
     private CompletableFuture<String> generatePrText() {
         GameFactsSnapshot snapshot = facts.snapshot();
-        String rubric = pickRubric(config.prRubrics());
+        String rubric = promptBuilder.nextRubric("pr");
         PromptContext ctx = promptBuilder.nextContext("pr", rubric, "hourly-cycle", snapshot);
         return generateWithRetry(ctx, config.validationRetries());
     }
@@ -113,10 +113,5 @@ public class PrManager {
             });
         }, delaySeconds * 20L);
         return f;
-    }
-
-    private String pickRubric(List<String> rubrics) {
-        if (rubrics.isEmpty()) return "join-call";
-        return rubrics.get((int) (System.currentTimeMillis() % rubrics.size()));
     }
 }

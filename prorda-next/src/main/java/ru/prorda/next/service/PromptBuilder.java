@@ -5,10 +5,13 @@ import ru.prorda.next.model.GameFactsSnapshot;
 
 import java.util.List;
 import java.util.StringJoiner;
-import java.util.concurrent.ThreadLocalRandom;
 
 public class PromptBuilder {
     private final ConfigService config;
+    private final OpeningSelector openingSelector = new OpeningSelector();
+    private final CtaSelector ctaSelector = new CtaSelector();
+    private final ToneSelector toneSelector = new ToneSelector();
+    private final RubricSelector rubricSelector = new RubricSelector();
 
     private static final List<String> OPENINGS = List.of(
             "Сегодня на сервере снова жарко",
@@ -63,6 +66,15 @@ public class PromptBuilder {
         j.add("Открытие поста: " + ctx.opening());
         j.add("Тон: " + ctx.tone() + ". Стиль: " + ctx.style() + ".");
         j.add("В конце используй CTA: " + ctx.cta());
+        if ("pr".equals(ctx.mode())) {
+            j.add("PR режим: дай прямой призыв зайти на сервер, явно укажи IP и преимущества.");
+            j.add("Добавь мягкое упоминание VK-сообщества: " + config.vkLink());
+        } else {
+            j.add("SMM режим: интересный живой пост, не всегда рекламный, можно вопрос/юмор/мини-историю.");
+        }
+        if (ctx.targetHint() != null && !ctx.targetHint().isBlank()) {
+            j.add("Target prompt hint: " + ctx.targetHint());
+        }
         j.add("Сервер: " + config.serverName() + " | IP: " + config.serverIp() + " | VK: " + config.vkLink());
         j.add("Версия: " + config.serverVersion() + " | Жанр: " + config.serverGenre() + " | Поджанр: " + config.serverSubgenre());
         j.add("Фичи: " + String.join(", ", config.serverFeatures()));
@@ -75,12 +87,17 @@ public class PromptBuilder {
     }
 
     public PromptContext nextContext(String mode, String rubric, String reason, ru.prorda.next.model.GameFactsSnapshot facts) {
-        int seed = ThreadLocalRandom.current().nextInt();
-        String opening = OPENINGS.get(Math.floorMod(seed, OPENINGS.size()));
-        String cta = CTAS.get(Math.floorMod(seed / 7, CTAS.size()));
-        String tone = TONES.get(Math.floorMod(seed / 13, TONES.size()));
-        String style = STYLES.get(Math.floorMod(seed / 17, STYLES.size()));
-        return new PromptContext(mode, rubric, reason, facts, opening, cta, tone, style);
+        boolean pr = "pr".equals(mode);
+        List<String> openings = pr ? merge(config.promptOpeningsPr(), OPENINGS) : merge(config.promptOpeningsSmm(), OPENINGS);
+        List<String> ctas = pr ? merge(config.promptCtasPr(), CTAS) : merge(config.promptCtasSmm(), CTAS);
+        List<String> tones = pr ? merge(config.promptTonesPr(), TONES) : merge(config.promptTonesSmm(), TONES);
+        List<String> styles = pr ? merge(config.promptStylesPr(), STYLES) : merge(config.promptStylesSmm(), STYLES);
+        String opening = openingSelector.pick(openings, OPENINGS.get(0));
+        String cta = ctaSelector.pick(ctas, CTAS.get(0)).replace("{ip}", config.serverIp());
+        String tone = toneSelector.pick(tones, TONES.get(0));
+        String style = toneSelector.pick(styles, STYLES.get(0));
+        String targetHint = pr ? String.join("; ", config.prPromptHints()) : "";
+        return new PromptContext(mode, rubric, reason, facts, opening, cta, tone, style, targetHint);
     }
 
     public int promptVariations() {
@@ -90,5 +107,14 @@ public class PromptBuilder {
     // backward-compatible helper for legacy services
     public String build(String rubric, String reason, GameFactsSnapshot facts) {
         return build(nextContext("legacy", rubric, reason, facts));
+    }
+
+    public String nextRubric(String mode) {
+        if ("pr".equals(mode)) return rubricSelector.pick("pr", config.prRubrics(), "join-call");
+        return rubricSelector.pick("smm", config.smmRubrics(), "community-post");
+    }
+
+    private List<String> merge(List<String> fromConfig, List<String> fallback) {
+        return (fromConfig == null || fromConfig.isEmpty()) ? fallback : fromConfig;
     }
 }

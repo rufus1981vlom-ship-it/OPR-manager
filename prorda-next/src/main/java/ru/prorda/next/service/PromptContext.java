@@ -10,5 +10,6 @@ public record PromptContext(
         String opening,
         String cta,
         String tone,
-        String style
+        String style,
+        String targetHint
 ) {}

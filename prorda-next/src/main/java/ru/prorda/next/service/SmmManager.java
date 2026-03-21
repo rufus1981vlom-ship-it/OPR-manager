@@ -6,7 +6,6 @@ import org.bukkit.scheduler.BukkitTask;
 import ru.prorda.next.config.ConfigService;
 import ru.prorda.next.model.GameFactsSnapshot;
 
-import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicBoolean;
 
@@ -53,7 +52,7 @@ public class SmmManager {
     public CompletableFuture<Boolean> postNow() {
         if (!inProgress.compareAndSet(false, true)) return CompletableFuture.completedFuture(false);
         GameFactsSnapshot snapshot = facts.snapshot();
-        String rubric = pickRubric(config.smmRubrics());
+        String rubric = promptBuilder.nextRubric("smm");
         PromptContext ctx = promptBuilder.nextContext("smm", rubric, "scheduled", snapshot);
         return generateWithRetry(ctx, config.validationRetries())
                 .thenCompose(text -> vk.postToWallAsync(config.smmMainGroupId(), text).thenApply(x -> text))
@@ -82,8 +81,4 @@ public class SmmManager {
         });
     }
 
-    private String pickRubric(List<String> rubrics) {
-        if (rubrics.isEmpty()) return "community-post";
-        return rubrics.get((int) (System.currentTimeMillis() % rubrics.size()));
-    }
 }

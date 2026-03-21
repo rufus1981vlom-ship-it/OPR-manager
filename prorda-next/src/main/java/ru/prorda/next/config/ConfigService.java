@@ -131,6 +131,14 @@ public class ConfigService {
     public int minTextLength() { return config.getInt("validation.min-length", 80); }
     public int maxTextLength() { return config.getInt("validation.max-length", 900); }
     public int validationRetries() { return config.getInt("validation.retries", 2); }
+    public List<String> promptOpeningsSmm() { return config.getStringList("prompts.smm.openings"); }
+    public List<String> promptOpeningsPr() { return config.getStringList("prompts.pr.openings"); }
+    public List<String> promptCtasSmm() { return config.getStringList("prompts.smm.cta"); }
+    public List<String> promptCtasPr() { return config.getStringList("prompts.pr.cta"); }
+    public List<String> promptTonesSmm() { return config.getStringList("prompts.smm.tones"); }
+    public List<String> promptTonesPr() { return config.getStringList("prompts.pr.tones"); }
+    public List<String> promptStylesSmm() { return config.getStringList("prompts.smm.styles"); }
+    public List<String> promptStylesPr() { return config.getStringList("prompts.pr.styles"); }
 
     public LocalTime parseTime(String text, LocalTime fallback) {
         try { return LocalTime.parse(text); } catch (Exception ignored) { return fallback; }
@@ -161,5 +169,18 @@ public class ConfigService {
             if (id != 0) ids.add(-Math.abs(id));
         }
         return ids;
+    }
+
+    public List<String> prPromptHints() {
+        ConfigurationSection section = groups.getConfigurationSection("groups");
+        if (section == null) return List.of();
+        List<String> hints = new ArrayList<>();
+        for (String key : section.getKeys(false)) {
+            ConfigurationSection node = section.getConfigurationSection(key);
+            if (node == null || !node.getBoolean("enabled", true)) continue;
+            String hint = node.getString("prompt-hint", "").trim();
+            if (!hint.isBlank()) hints.add(hint);
+        }
+        return hints;
     }
 }

@@ -10,6 +10,7 @@ Paper 1.20.4 плагин для автономного SMM/PR по VK:
 - Retry при ошибках AI без падения scheduler.
 - Валидация текста перед публикацией (мусор/длина/капс/"как ИИ").
 - Anti-repeat история для SMM/PR (`mode`, `target`, `rubric`, `hash`, `status`).
+- Prompt Engine: `PromptContext` + селекторы рубрик/открытий/CTA/тона + `prompt-hint` из `groups.yml`.
 - Команды `/piaro`: `start`, `stop`, `reload`, `status`, `debug`, `dryrun`, `testtext`, `postnow [smm|pr]`, `history`, `provider`.
 
 ## Настройка
