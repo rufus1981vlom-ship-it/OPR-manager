@@ -1,31 +1,38 @@
-# PROrdaNext
+# PROrdaNext (Text-only SMM + PR manager)
 
-Новый автономный Paper 1.20.4 плагин для PR/SMM автопостинга в VK.
+Paper 1.20.4 плагин для автономного SMM/PR по VK:
+- **SMM Manager**: постит в основную группу сервера каждые 8 часов.
+- **PR Manager**: каждый час генерирует один PR-текст и отправляет его по целевым группам из `groups.yml` **не одновременно**, а в течение 30 минут с jitter.
 
-## Сборка
-```bash
-cd prorda-next
-JAVA_HOME=/path/to/jdk-21 gradle clean jar
+## Ключевые возможности
+- Чёткое разделение SMM и PR режимов.
+- Текстовая генерация через **GitHub Models API** (`provider: github-models`).
+- Retry при ошибках AI без падения scheduler.
+- Валидация текста перед публикацией (мусор/длина/капс/"как ИИ").
+- Anti-repeat история для SMM/PR (`mode`, `target`, `rubric`, `hash`, `status`).
+- Команды `/piaro`: `start`, `stop`, `reload`, `status`, `debug`, `dryrun`, `testtext`, `postnow [smm|pr]`, `history`, `provider`.
+
+## Настройка
+1. В `config.yml` заполнить:
+   - `vk-account.token`
+   - `smm.main-group-id`
+   - `ai.github-models.token` (или через `GITHUB_TOKEN`)
+2. В `groups.yml` заполнить PR цели (`group-id`, `enabled`, лимиты и hint).
+3. Перезапустить или `/piaro reload`.
+
+## AI блок (пример)
+```yaml
+ai:
+  provider: "github-models"
+  github-models:
+    enabled: true
+    endpoint: "https://models.github.ai/inference/chat/completions"
+    token: ""
+    model: "openai/gpt-4.1"
+    api-version: "2022-11-28"
+    timeout-ms: 60000
+    retries: 2
 ```
 
-> Исходники собираются с Java toolchain 17 (runtime совместим с Java 17+),
-> команда выше запускает Gradle под JDK 21, что обычно стабильнее для окружений с новым Gradle.
-
-## Что реализовано
-- Runtime-сбор фактов (online/joins/quits/deaths/pvp/events).
-- Auto-PR (утро/вечер/неделя/event-driven).
-- Auto-promo по `groups.yml` (очередь, интервал, переход к следующей группе при ошибке).
-- OpenAI и VK клиент на `java.net.http.HttpClient`.
-- Поддержка AI-провайдеров: OpenAI / DeepSeek / Copilot (GitHub Models).
-- SQLite storage с авто-recovery при corrupt DB.
-- `/piaro` команды: start/stop/reload/status/debug/testpost/dryrun.
-
-## Важно
-- Сейчас поддержан только текстовый `wall.post`.
-- Image generation/upload в VK по умолчанию безопасно отключены.
-- LLM-провайдер переключается через `config.yml` (`ai.provider`: `openai`, `deepseek`, `copilot`).
-- Для ключей можно использовать либо `ai.api-key`, либо переменные окружения:
-  - `OPENAI_API_KEY` для `openai`;
-  - `DEEPSEEK_API_KEY` для `deepseek` (и `OPENAI_API_KEY` как запасной fallback);
-  - `GITHUB_TOKEN` или `COPILOT_API_KEY` для `copilot` (и `OPENAI_API_KEY` как запасной fallback).
-- При `auto-pr.image-generation.enabled=true` и `attach-to-vk=true` плагин запрашивает генерацию изображения у текущего AI-провайдера (для OpenAI/Copilot) и добавляет ссылку на изображение в текст поста перед отправкой в VK.
+## Примечание
+Проект работает в text-only режиме: отправляет только текстовый `wall.post`.

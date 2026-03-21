@@ -9,7 +9,7 @@ libraries:
 commands:
   piaro:
     description: PROrdaNext management
-    usage: /piaro <start|stop|reload|status|debug|testpost|dryrun>
+    usage: /piaro <start|stop|reload|status|debug|dryrun|testtext|postnow|history|provider>
     permission: prorda.admin
 permissions:
   prorda.admin:

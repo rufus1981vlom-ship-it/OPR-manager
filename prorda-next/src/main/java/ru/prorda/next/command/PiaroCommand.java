@@ -1,9 +1,7 @@
 package ru.prorda.next.command;
 
-import ru.prorda.next.ProRdaNextPlugin;
-import ru.prorda.next.model.PublishDebugReport;
-import ru.prorda.next.model.PublishResult;
 import org.bukkit.command.*;
+import ru.prorda.next.ProRdaNextPlugin;
 
 import java.util.List;
 
@@ -25,45 +23,34 @@ public class PiaroCommand implements CommandExecutor, TabCompleter {
                 plugin.setDebug(on);
                 sender.sendMessage("§aDebug=" + on);
             }
-            case "testpost" -> {
-                String rubric = args.length > 1 ? args[1] : "новости";
-                sender.sendMessage("§7testpost started: " + rubric);
-                plugin.autoPr().publishWithReport(rubric, "testpost", true).thenAccept(r -> sender.sendMessage(formatReport(r)));
+            case "dryrun", "testtext" -> plugin.dryRun()
+                    .thenAccept(text -> sender.sendMessage("§bDRYRUN len=" + text.length() + " text=" + text))
+                    .exceptionally(ex -> {
+                        sender.sendMessage("§cDRYRUN failed: " + ex.getMessage());
+                        return null;
+                    });
+            case "postnow" -> {
+                String mode = args.length > 1 ? args[1].toLowerCase() : "all";
+                if ("smm".equals(mode)) {
+                    plugin.postNowSmm().thenAccept(ok -> sender.sendMessage("§bpostnow smm=" + ok));
+                } else if ("pr".equals(mode)) {
+                    plugin.postNowPr().thenAccept(ok -> sender.sendMessage("§bpostnow pr=" + ok));
+                } else {
+                    plugin.postNowSmm().thenAccept(ok -> sender.sendMessage("§bpostnow smm=" + ok));
+                    plugin.postNowPr().thenAccept(ok -> sender.sendMessage("§bpostnow pr=" + ok));
+                }
             }
-            case "dryrun" -> {
-                String rubric = args.length > 1 ? args[1] : "новости";
-                sender.sendMessage("§7dryrun started: " + rubric);
-                plugin.dryRun(rubric).thenAccept(r -> sender.sendMessage(formatReport(r)));
-            }
+            case "provider" -> sender.sendMessage("§bprovider=" + plugin.llmClient().provider() + " model=" + plugin.llmClient().model());
+            case "history" -> sender.sendMessage("§blast=" + plugin.lastHistorySummary());
             default -> { return false; }
         }
         return true;
     }
 
-    private String format(PublishResult r) {
-        return "§bstatus=" + r.status().code() + " details=" + r.details() + " len=" + r.text().length();
-    }
-
-    private String formatReport(PublishDebugReport r) {
-        return "§bstatus=" + r.result().status().code()
-                + " prompt built=" + yesNo(r.promptBuilt())
-                + " data threshold bypassed=" + yesNo(r.dataThresholdBypass())
-                + " openai request sent=" + yesNo(r.openAiRequestSent())
-                + " provider=" + r.provider()
-                + " base-url=" + r.baseUrl()
-                + " model=" + r.model()
-                + " http status=" + r.httpStatus()
-                + " error body=" + (r.errorBody() == null ? "" : r.errorBody())
-                + " openai response status=" + r.openAiResponseStatus()
-                + " final text length=" + r.finalTextLength();
-    }
-
-    private String yesNo(boolean v) { return v ? "yes" : "no"; }
-
     @Override
     public List<String> onTabComplete(CommandSender sender, Command command, String alias, String[] args) {
-        if (args.length == 1) return List.of("start", "stop", "reload", "status", "debug", "testpost", "dryrun");
-        if (args.length == 2 && (args[0].equalsIgnoreCase("testpost") || args[0].equalsIgnoreCase("dryrun"))) return plugin.config().rubrics();
+        if (args.length == 1) return List.of("start", "stop", "reload", "status", "debug", "dryrun", "testtext", "postnow", "history", "provider");
+        if (args.length == 2 && args[0].equalsIgnoreCase("postnow")) return List.of("smm", "pr");
         if (args.length == 2 && args[0].equalsIgnoreCase("debug")) return List.of("on", "off");
         return List.of();
     }

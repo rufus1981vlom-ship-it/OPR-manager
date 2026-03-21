@@ -2,9 +2,6 @@ package ru.prorda.next;
 
 import ru.prorda.next.command.PiaroCommand;
 import ru.prorda.next.config.ConfigService;
-import ru.prorda.next.model.PublicationStatus;
-import ru.prorda.next.model.PublishDebugReport;
-import ru.prorda.next.model.PublishResult;
 import ru.prorda.next.service.*;
 import ru.prorda.next.storage.Storage;
 import org.bukkit.Bukkit;
@@ -17,8 +14,10 @@ public class ProRdaNextPlugin extends JavaPlugin {
     private ConfigService config;
     private Storage storage;
     private RuntimeFactCollector facts;
-    private AutoPrService autoPr;
-    private AutoPromoService autoPromo;
+    private SmmManager smmManager;
+    private PrManager prManager;
+    private LlmClient llmClient;
+    private PostHistoryService postHistory;
 
     @Override
     public void onEnable() {
@@ -33,11 +32,7 @@ public class ProRdaNextPlugin extends JavaPlugin {
         this.facts = new RuntimeFactCollector();
         Bukkit.getPluginManager().registerEvents(facts, this);
 
-        PromptBuilder promptBuilder = new PromptBuilder(config);
-        OpenAiClient openAi = new OpenAiClient(this, config);
-        VkClient vk = new VkClient(this, config);
-        this.autoPr = new AutoPrService(this, config, storage, facts, promptBuilder, openAi, vk);
-        this.autoPromo = new AutoPromoService(this, config, autoPr, vk, storage);
+        initManagers();
 
         PiaroCommand piaroCommand = new PiaroCommand(this);
         PluginCommand command = getCommand("piaro");
@@ -47,13 +42,11 @@ public class ProRdaNextPlugin extends JavaPlugin {
         }
 
         setDebug(config.debugEnabled());
-        if (config.autoPrAutoEnable()) startServices();
+        startServices();
 
-        if (config.aiApiKey().isBlank()) getLogger().warning("[PROrdaNext] AI key missing");
+        if (llmClient instanceof GithubModelsTextClient && config.githubModelsToken().isBlank()) getLogger().warning("[PROrdaNext] GitHub Models token missing");
+        if (!(llmClient instanceof GithubModelsTextClient) && config.aiApiKey().isBlank()) getLogger().warning("[PROrdaNext] AI key missing");
         if (config.vkToken().isBlank()) getLogger().warning("[PROrdaNext] VK token missing");
-        if (config.imageGenerationEnabled() && !config.attachImagesToVk()) {
-            getLogger().warning("[PROrdaNext] image generation enabled but VK attachment flow is disabled (safe mode)");
-        }
         getLogger().info("[PROrdaNext] enabled");
     }
 
@@ -67,85 +60,63 @@ public class ProRdaNextPlugin extends JavaPlugin {
     public void reloadAll() {
         stopServices();
         config.reloadAll();
+        initManagers();
         setDebug(config.debugEnabled());
-        if (config.autoPrAutoEnable()) startServices();
+        startServices();
         storage.setState("debug.last_stage", "reload_applied");
         getLogger().info("[PROrdaNext] reload applied");
     }
 
+    private void initManagers() {
+        PromptBuilder promptBuilder = new PromptBuilder(config);
+        this.llmClient = "github-models".equals(config.aiProvider())
+                ? new GithubModelsTextClient(this, config)
+                : new OpenAiClient(this, config);
+        VkClient vk = new VkClient(this, config);
+        PostValidationService validator = new PostValidationService(config);
+        this.postHistory = new PostHistoryService(storage);
+        this.smmManager = new SmmManager(this, config, facts, llmClient, vk, promptBuilder, validator, postHistory);
+        this.prManager = new PrManager(this, config, facts, llmClient, vk, promptBuilder, validator, postHistory);
+    }
+
     public void startServices() {
-        autoPr.start();
-        autoPromo.start();
+        smmManager.start();
+        prManager.start();
     }
 
     public void stopServices() {
-        autoPromo.stop();
-        autoPr.stop();
+        smmManager.stop();
+        prManager.stop();
     }
 
     public void setDebug(boolean enabled) {
-        autoPr.setDebug(enabled);
         storage.setState("debug.enabled", String.valueOf(enabled));
     }
 
     public String statusText() {
-        return "§bauto-pr=" + autoPr.isRunning()
-                + " auto-promo=" + autoPromo.isRunning()
+        return "§bsmm=" + smmManager.isRunning()
+                + " pr=" + prManager.isRunning()
                 + " debug=" + storage.getState("debug.enabled", "false")
-                + " owner-id=" + config.smmOwnerId()
+                + " provider=" + llmClient.provider()
+                + " model=" + llmClient.model()
                 + " vk-token=" + !config.vkToken().isBlank()
-                + " ai-key=" + !config.aiApiKey().isBlank()
-                + " posts-today=" + storage.todayPublishedCount()
-                + " last-stage=" + storage.getState("debug.last_stage", "-")
-                + " last-status=" + storage.getState("debug.last_status", "-")
-                + " last-openai-http=" + storage.getState("debug.last-openai-http", "-")
-                + " last-openai-error-code=" + storage.getState("debug.last-openai-error-code", "-")
-                + " last-openai-error-message=" + storage.getState("debug.last-openai-error-message", "-")
-                + " ai-provider=" + storage.getState("debug.ai.provider", config.aiProvider())
-                + " ai-base-url=" + storage.getState("debug.ai.base-url", config.aiBaseUrl())
-                + " ai-model=" + storage.getState("debug.ai.model", config.aiModel())
+                + " smm-today=" + storage.todayModeCount("smm")
+                + " pr-today=" + storage.todayModeCount("pr")
+                + " last=" + postHistory.lastSummary()
                 + " last-error=" + storage.getState("debug.last_error", "-");
     }
 
-    public CompletableFuture<PublishDebugReport> dryRun(String rubric) {
-        String prompt = new PromptBuilder(config).build(rubric, "dryrun", facts.snapshot());
-        storage.logPrompt(rubric, prompt);
-        OpenAiClient client = new OpenAiClient(this, config);
-        storage.setState("debug.ai.provider", client.provider());
-        storage.setState("debug.ai.base-url", client.baseUrl());
-        storage.setState("debug.ai.model", client.model());
-        return client.generatePostAsync(prompt)
-                .handle((text, err) -> {
-                    if (err != null) {
-                        Throwable cause = (err.getCause() != null) ? err.getCause() : err;
-                        if (cause instanceof AiProviderException aiEx) {
-                            storage.setState("debug.last-openai-http", String.valueOf(aiEx.httpStatus()));
-                            storage.setState("debug.last-openai-error-code", aiEx.errorCode());
-                            storage.setState("debug.last-openai-error-message", aiEx.errorMessage());
-                            return new PublishDebugReport(
-                                    new PublishResult(PublicationStatus.OPENAI_FAILED, aiEx.getMessage(), ""),
-                                    true,
-                                    true,
-                                    true,
-                                    client.provider(),
-                                    client.baseUrl(),
-                                    client.model(),
-                                    String.valueOf(aiEx.httpStatus()),
-                                    aiEx.errorBody(),
-                                    "http_" + aiEx.httpStatus(),
-                                    0
-                            );
-                        }
-                        return new PublishDebugReport(new PublishResult(PublicationStatus.OPENAI_FAILED, cause.getMessage(), ""), true, true, true, client.provider(), client.baseUrl(), client.model(), "-", cause.getMessage(), "failed", 0);
-                    }
-                    storage.setState("debug.last-openai-http", "200");
-                    storage.setState("debug.last-openai-error-code", "");
-                    storage.setState("debug.last-openai-error-message", "");
-                    if (text == null || text.isBlank()) return new PublishDebugReport(new PublishResult(PublicationStatus.EMPTY_OPENAI_RESPONSE, "empty", ""), true, true, true, client.provider(), client.baseUrl(), client.model(), "200", "", "ok_200", 0);
-                    return new PublishDebugReport(new PublishResult(PublicationStatus.PUBLISHED, "dryrun_ok", text), true, true, true, client.provider(), client.baseUrl(), client.model(), "200", "", "ok_200", text.length());
-                });
+    public CompletableFuture<String> dryRun() {
+        PromptBuilder builder = new PromptBuilder(config);
+        PromptContext ctx = builder.nextContext("smm", "dryrun", "manual", facts.snapshot());
+        String prompt = builder.build(ctx);
+        storage.logPrompt("dryrun", prompt);
+        return llmClient.generatePostAsync(prompt);
     }
 
-    public AutoPrService autoPr() { return autoPr; }
+    public CompletableFuture<Boolean> postNowSmm() { return smmManager.postNow(); }
+    public CompletableFuture<Boolean> postNowPr() { return prManager.postNow(); }
+    public LlmClient llmClient() { return llmClient; }
+    public String lastHistorySummary() { return postHistory.lastSummary(); }
     public ConfigService config() { return config; }
 }
