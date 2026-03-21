@@ -102,7 +102,7 @@ public class PrManager {
     private CompletableFuture<Boolean> delayedPost(long target, String text, long delaySeconds) {
         CompletableFuture<Boolean> f = new CompletableFuture<>();
         Bukkit.getScheduler().runTaskLaterAsynchronously(plugin, () -> {
-            vk.postToWallAsync(target, text).thenAccept(raw -> {
+            vk.postToWallAsUser(target, text).thenAccept(raw -> {
                 history.log("pr", target, "dispatch", history.hash(text), true, "published");
                 f.complete(true);
             }).exceptionally(ex -> {

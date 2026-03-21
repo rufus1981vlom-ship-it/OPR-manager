@@ -55,7 +55,7 @@ public class SmmManager {
         String rubric = promptBuilder.nextRubric("smm");
         PromptContext ctx = promptBuilder.nextContext("smm", rubric, "scheduled", snapshot);
         return generateWithRetry(ctx, config.validationRetries())
-                .thenCompose(text -> vk.postToWallAsync(config.smmMainGroupId(), text).thenApply(x -> text))
+                .thenCompose(text -> vk.postToWallAsGroup(config.smmMainGroupId(), text).thenApply(x -> text))
                 .thenApply(text -> {
                     history.log("smm", config.smmMainGroupId(), rubric, history.hash(text), true, "published");
                     return true;
